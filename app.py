@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import sys
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pandas as pd
@@ -14,12 +14,15 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from credit_platform.bootstrap import initialize_platform
+from credit_platform.application_service import build_profile_from_payload, validate_profile_payload
+from credit_platform.bootstrap import create_platform_runtime, load_platform_artifacts
 from credit_platform.database import CreditRepository
-from credit_platform.domain import ScoringResult
+from credit_platform.domain import ApplicantProfile, ScoringResult
 from credit_platform.reporting_service import (
+    build_dashboard_alerts,
     build_dashboard_summary,
     build_label_feedback_metrics,
+    build_lift_summary,
     build_operations_trend,
     build_risk_distribution,
     parse_json_field,
@@ -37,8 +40,14 @@ st.set_page_config(
 
 
 @st.cache_resource(show_spinner=False)
+def load_platform_artifacts_resource():
+    return load_platform_artifacts()
+
+
 def load_runtime():
-    return initialize_platform(seed_demo=True)
+    artifacts = load_platform_artifacts_resource()
+    repo, service = create_platform_runtime(artifacts, seed_demo=True)
+    return artifacts, repo, service
 
 
 NAV_ITEMS = [
@@ -324,6 +333,12 @@ def overview_page(repo: CreditRepository, artifacts) -> None:
             """,
             unsafe_allow_html=True,
         )
+        for alert in build_dashboard_alerts(repo, artifacts):
+            level = "预警" if alert["level"] == "warn" else "正常"
+            st.markdown(
+                f"<div class='alert-line'><b>{level}</b> {alert['title']}：{alert['message']}</div>",
+                unsafe_allow_html=True,
+            )
 
     st.markdown("<div class='section-title'>当前申请明细</div>", unsafe_allow_html=True)
     app_df = pd.DataFrame(repo.list_applications())
@@ -355,40 +370,25 @@ def application_page(repo: CreditRepository, service: ScoringService) -> None:
     result = service.score_sample(sample_key)
     profile = result.profile
 
-    tabs = st.tabs(["基本信息", "申请信息", "收入与负债", "历史行为"])
-    with tabs[0]:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.text_input("客户编号", profile.customer_id, disabled=True)
-        c2.text_input("客户姓名", profile.customer_name, disabled=True)
-        c3.number_input("年龄", value=profile.age, disabled=True)
-        c4.text_input("职业类别", profile.occupation_type, disabled=True)
-    with tabs[1]:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.number_input("贷款金额", value=float(profile.credit_amount), disabled=True)
-        c2.number_input("商品价格", value=float(profile.goods_price), disabled=True)
-        c3.number_input("年金", value=float(profile.annuity_amount), disabled=True)
-        c4.text_input("申请渠道", "线上进件", disabled=True)
-    with tabs[2]:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.number_input("年收入", value=float(profile.annual_income), disabled=True)
-        c2.number_input("在职天数", value=profile.days_employed, disabled=True)
-        c3.number_input("外部授信金额", value=float(profile.bureau_credit_sum_total), disabled=True)
-        c4.number_input("外部债务金额", value=float(profile.bureau_debt_sum_total), disabled=True)
-    with tabs[3]:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.number_input("历史申请次数", value=profile.prev_record_count, disabled=True)
-        c2.number_input("历史逾期次数", value=profile.inst_overdue_count, disabled=True)
-        c3.number_input("信用卡利用率", value=float(profile.cc_utilization_ratio_mean), disabled=True)
-        c4.number_input("子女数", value=profile.children_count, disabled=True)
+    with st.form(f"application-form-{sample_key}"):
+        payload = render_profile_form(profile)
+        submitted = st.form_submit_button("提交评分", type="primary", width="content")
 
-    submitted = st.button("提交评分", type="primary", width="content")
+    result_for_display = result
     if submitted:
-        app_id = repo.create_application(result.profile, result)
-        st.session_state["last_application_id"] = app_id
-        st.success(f"评分完成：{app_id}")
+        errors = validate_profile_payload(payload)
+        if errors:
+            for error in errors:
+                st.error(error)
+        else:
+            edited_profile = build_profile_from_payload(profile, payload)
+            result_for_display = replace(result, profile=edited_profile)
+            app_id = repo.create_application(result_for_display.profile, result_for_display)
+            st.session_state["last_application_id"] = app_id
+            st.success(f"评分完成：{app_id}")
 
     st.markdown("<div class='section-title'>当前评分结果</div>", unsafe_allow_html=True)
-    render_scoring_result(result, st.session_state.get("last_application_id", "待提交"))
+    render_scoring_result(result_for_display, st.session_state.get("last_application_id", "待提交"))
 
     st.markdown("<div class='section-title'>申请列表</div>", unsafe_allow_html=True)
     app_df = pd.DataFrame(repo.list_applications())
@@ -410,6 +410,41 @@ def application_page(repo: CreditRepository, service: ScoringService) -> None:
             width="stretch",
             hide_index=True,
         )
+        detail_ids = app_df["application_id"].tolist()
+        last_app_id = st.session_state.get("last_application_id")
+        default_index = detail_ids.index(last_app_id) if last_app_id in detail_ids else 0
+        detail_id = st.selectbox("申请详情", detail_ids, index=default_index)
+        render_application_detail(repo, detail_id)
+
+
+def render_profile_form(profile: ApplicantProfile) -> dict:
+    payload = asdict(profile)
+    tabs = st.tabs(["基本信息", "申请信息", "收入与负债", "历史行为"])
+    with tabs[0]:
+        c1, c2, c3, c4 = st.columns(4)
+        payload["customer_id"] = c1.text_input("客户编号", profile.customer_id)
+        payload["customer_name"] = c2.text_input("客户姓名", profile.customer_name)
+        payload["age"] = c3.number_input("年龄", value=profile.age, min_value=0, step=1)
+        payload["occupation_type"] = c4.text_input("职业类别", profile.occupation_type)
+    with tabs[1]:
+        c1, c2, c3, c4 = st.columns(4)
+        payload["credit_amount"] = c1.number_input("贷款金额", value=float(profile.credit_amount), min_value=0.0, step=1000.0)
+        payload["goods_price"] = c2.number_input("商品价格", value=float(profile.goods_price), min_value=0.0, step=1000.0)
+        payload["annuity_amount"] = c3.number_input("年金", value=float(profile.annuity_amount), min_value=0.0, step=500.0)
+        c4.text_input("申请渠道", "线上进件")
+    with tabs[2]:
+        c1, c2, c3, c4 = st.columns(4)
+        payload["annual_income"] = c1.number_input("年收入", value=float(profile.annual_income), min_value=0.0, step=1000.0)
+        payload["days_employed"] = c2.number_input("在职天数", value=profile.days_employed, min_value=0, step=30)
+        payload["bureau_credit_sum_total"] = c3.number_input("外部授信金额", value=float(profile.bureau_credit_sum_total), min_value=0.0, step=1000.0)
+        payload["bureau_debt_sum_total"] = c4.number_input("外部债务金额", value=float(profile.bureau_debt_sum_total), min_value=0.0, step=1000.0)
+    with tabs[3]:
+        c1, c2, c3, c4 = st.columns(4)
+        payload["prev_record_count"] = c1.number_input("历史申请次数", value=profile.prev_record_count, min_value=0, step=1)
+        payload["inst_overdue_count"] = c2.number_input("历史逾期次数", value=profile.inst_overdue_count, min_value=0, step=1)
+        payload["cc_utilization_ratio_mean"] = c3.number_input("信用卡利用率", value=float(profile.cc_utilization_ratio_mean), min_value=0.0, max_value=1.0, step=0.01)
+        payload["children_count"] = c4.number_input("子女数", value=profile.children_count, min_value=0, step=1)
+    return payload
 
 
 def render_scoring_result(result: ScoringResult, application_id: str) -> None:
@@ -437,6 +472,77 @@ def render_scoring_result(result: ScoringResult, application_id: str) -> None:
             color_continuous_scale=["#10a36f", "#e5e7eb", "#dc2626"],
         )
         st.plotly_chart(plotly_layout(fig, height=280), width="stretch")
+
+
+def render_application_detail(repo: CreditRepository, application_id: str) -> None:
+    detail = repo.get_application_detail(application_id)
+    application = detail["application"]
+    scoring = detail["scoring_result"]
+    snapshot = detail["feature_snapshot"]
+    review = detail["review_task"]
+    feedback = detail["label_feedback"]
+
+    st.markdown("<div class='section-title'>申请详情</div>", unsafe_allow_html=True)
+    cols = st.columns(5)
+    cols[0].metric("申请编号", application["application_id"])
+    cols[1].metric("客户姓名", application["customer_name"])
+    cols[2].metric("当前状态", application["status"])
+    cols[3].metric("风险分", f"{float(scoring.get('score', 0)):.0f}")
+    cols[4].metric("校准 PD", fmt_pd(float(scoring.get("calibrated_pd", 0))))
+
+    left, right = st.columns([1, 1])
+    with left:
+        st.markdown("客户与申请快照")
+        snapshot_fields = [
+            ("客户编号", "customer_id"),
+            ("客户姓名", "customer_name"),
+            ("年龄", "age"),
+            ("职业类别", "occupation_type"),
+            ("年收入", "annual_income"),
+            ("贷款金额", "credit_amount"),
+            ("外部债务金额", "bureau_debt_sum_total"),
+            ("历史逾期次数", "inst_overdue_count"),
+        ]
+        st.dataframe(
+            pd.DataFrame(
+                [{"字段": label, "值": snapshot.get(key, "")} for label, key in snapshot_fields]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    with right:
+        st.markdown("原因码与解释")
+        reasons = scoring.get("reason_codes", [])
+        st.markdown("".join(f"<span class='reason-chip'>{reason}</span>" for reason in reasons), unsafe_allow_html=True)
+        factors = pd.DataFrame(scoring.get("negative_factors", []) + scoring.get("positive_factors", []))
+        if not factors.empty:
+            st.dataframe(factors[["reason", "value", "threshold", "impact"]], width="stretch", hide_index=True)
+
+    status_rows = [
+        {"节点": "申请创建", "状态": "已完成", "时间": application["created_at"]},
+        {"节点": "模型评分", "状态": scoring.get("decision_band", ""), "时间": scoring.get("scored_at", "")},
+    ]
+    if review:
+        status_rows.append(
+            {
+                "节点": "人工复核",
+                "状态": review.get("review_decision") or review.get("review_status"),
+                "时间": review.get("completed_at") or review.get("created_at"),
+            }
+        )
+    if feedback:
+        status_rows.append(
+            {
+                "节点": "标签回流",
+                "状态": "违约" if int(feedback["actual_default_label"]) == 1 else "未违约",
+                "时间": feedback["label_returned_at"],
+            }
+        )
+    st.dataframe(pd.DataFrame(status_rows), width="stretch", hide_index=True)
+
+    logs = pd.DataFrame(detail["audit_logs"])
+    if not logs.empty:
+        st.dataframe(logs[["created_at", "operator_id", "module", "action", "target_id"]], width="stretch", hide_index=True)
 
 
 def review_page(repo: CreditRepository) -> None:
@@ -569,18 +675,23 @@ def model_page(artifacts) -> None:
 
 def reports_page(repo: CreditRepository, artifacts) -> None:
     page_header("报表中心", "经营趋势、风险分布、标签回流和审计记录")
-    trend = build_operations_trend(repo)
+    granularity_label = st.radio("统计粒度", ["日", "周", "月"], horizontal=True)
+    granularity = {"日": "day", "周": "week", "月": "month"}[granularity_label]
+    trend = build_operations_trend(repo, granularity=granularity)
     feedback = build_label_feedback_metrics(repo, artifacts)
+    lift_summary = build_lift_summary(artifacts)
 
-    cols = st.columns(4)
+    cols = st.columns(6)
     cols[0].metric("回流样本数", feedback.returned_count)
     cols[1].metric("回流坏样本数", feedback.bad_count)
     cols[2].metric("回流坏账率", fmt_pct(feedback.bad_rate))
     cols[3].metric("当前 AUC", f"{feedback.model_auc:.4f}")
+    cols[4].metric("当前 KS", f"{feedback.model_ks:.4f}")
+    cols[5].metric("最高 Lift", f"{lift_summary['max_lift']:.2f}x")
 
     left, right = st.columns(2)
     with left:
-        fig = px.line(trend, x="date", y=["申请量", "平均风险分"], markers=True)
+        fig = px.line(trend, x="period", y=["申请量", "平均风险分"], markers=True)
         st.plotly_chart(plotly_layout(fig), width="stretch")
     with right:
         risk_df = build_risk_distribution(repo, artifacts)
@@ -592,6 +703,12 @@ def reports_page(repo: CreditRepository, artifacts) -> None:
             color_discrete_map={"低风险": "#10a36f", "中风险": "#d97706", "高风险": "#dc2626"},
         )
         st.plotly_chart(plotly_layout(fig), width="stretch")
+
+    st.markdown("<div class='section-title'>Lift 摘要</div>", unsafe_allow_html=True)
+    lift_cols = st.columns(3)
+    lift_cols[0].metric("分箱数量", f"{int(lift_summary['bucket_count'])}")
+    lift_cols[1].metric("最高风险分箱 Lift", f"{lift_summary['max_lift']:.2f}x")
+    lift_cols[2].metric("最高分箱坏账率", fmt_pct(lift_summary["max_bad_rate"]))
 
     apps = repo.list_applications()
     candidates = [app for app in apps if app.get("actual_default_label") is None]

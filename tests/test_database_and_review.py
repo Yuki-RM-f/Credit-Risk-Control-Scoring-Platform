@@ -43,3 +43,29 @@ def test_auto_approve_and_reject_skip_review_queue(tmp_path: Path, sample_artifa
     assert repo.get_application(low_id)["status"] == "approved"
     assert repo.get_application(high_id)["status"] == "rejected"
     assert repo.list_pending_reviews() == []
+
+
+def test_application_detail_returns_joined_decoded_business_record(
+    tmp_path: Path, sample_artifact_dir: Path
+) -> None:
+    repo = CreditRepository(tmp_path / "platform.db")
+    repo.initialize()
+    service = ScoringService(load_artifacts(sample_artifact_dir))
+    result = service.score_sample("medium")
+    app_id = repo.create_application(result.profile, result)
+
+    repo.submit_review(app_id, "approved", "资料完整，可人工通过")
+    repo.add_label_feedback(app_id, 0)
+
+    detail = repo.get_application_detail(app_id)
+
+    assert detail["application"]["application_id"] == app_id
+    assert detail["feature_snapshot"]["customer_name"] == result.profile.customer_name
+    assert detail["scoring_result"]["reason_codes"] == result.reason_codes
+    assert detail["review_task"]["review_decision"] == "approved"
+    assert detail["label_feedback"]["actual_default_label"] == 0
+    assert [row["action"] for row in detail["audit_logs"]] == [
+        "label_feedback_returned",
+        "review_decision_submitted",
+        "application_scored",
+    ]

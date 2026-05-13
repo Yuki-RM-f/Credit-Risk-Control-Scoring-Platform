@@ -18,6 +18,12 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
+def _decode_json(value: str | None) -> Any:
+    if not value:
+        return None
+    return json.loads(value)
+
+
 def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -218,6 +224,54 @@ class CreditRepository:
         if result is None:
             raise KeyError(application_id)
         return result
+
+    def get_application_detail(self, application_id: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            application = _row_to_dict(
+                conn.execute("select * from application where application_id = ?", (application_id,)).fetchone()
+            )
+            if application is None:
+                raise KeyError(application_id)
+            feature_snapshot = _row_to_dict(
+                conn.execute(
+                    "select * from application_feature_snapshot where application_id = ?",
+                    (application_id,),
+                ).fetchone()
+            )
+            scoring_result = _row_to_dict(
+                conn.execute("select * from scoring_result where application_id = ?", (application_id,)).fetchone()
+            )
+            review_task = _row_to_dict(
+                conn.execute("select * from review_task where application_id = ?", (application_id,)).fetchone()
+            )
+            label_feedback = _row_to_dict(
+                conn.execute("select * from label_feedback where application_id = ?", (application_id,)).fetchone()
+            )
+            audit_logs = [
+                _row_to_dict(row)
+                for row in conn.execute(
+                    """
+                    select * from audit_log
+                    where target_id = ?
+                    order by created_at desc, log_id desc
+                    """,
+                    (application_id,),
+                ).fetchall()
+            ]
+
+        if feature_snapshot:
+            feature_snapshot = _decode_json(feature_snapshot["feature_payload"])
+        if scoring_result:
+            for field in ["reason_codes", "positive_factors", "negative_factors", "shap_payload"]:
+                scoring_result[field] = _decode_json(scoring_result[field]) or []
+        return {
+            "application": application,
+            "feature_snapshot": feature_snapshot or {},
+            "scoring_result": scoring_result or {},
+            "review_task": review_task,
+            "label_feedback": label_feedback,
+            "audit_logs": audit_logs,
+        }
 
     def list_applications(self) -> list[dict[str, Any]]:
         with self.connect() as conn:

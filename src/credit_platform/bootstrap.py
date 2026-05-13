@@ -29,14 +29,27 @@ def initialize_platform(
     db_path: Path = DEFAULT_DB_PATH,
     seed_demo: bool = True,
 ) -> tuple[PlatformArtifacts, CreditRepository, ScoringService]:
+    artifacts = load_platform_artifacts(artifact_dir)
+    repo, service = create_platform_runtime(artifacts, db_path=db_path, seed_demo=seed_demo)
+    return artifacts, repo, service
+
+
+def load_platform_artifacts(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> PlatformArtifacts:
     artifact_path = ensure_artifact_bundle(artifact_dir)
-    artifacts = load_artifacts(artifact_path)
+    return load_artifacts(artifact_path)
+
+
+def create_platform_runtime(
+    artifacts: PlatformArtifacts,
+    db_path: Path = DEFAULT_DB_PATH,
+    seed_demo: bool = True,
+) -> tuple[CreditRepository, ScoringService]:
     repo = CreditRepository(db_path)
     repo.initialize()
     service = ScoringService(artifacts, strategy_version=repo.get_active_strategy()["strategy_version"])
     if seed_demo and repo.is_empty():
         seed_demo_applications(repo, service)
-    return artifacts, repo, service
+    return repo, service
 
 
 def seed_demo_applications(repo: CreditRepository, service: ScoringService) -> None:
