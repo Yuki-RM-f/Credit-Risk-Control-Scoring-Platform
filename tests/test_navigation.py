@@ -57,3 +57,12 @@ def test_topbar_has_enough_spacing_below_streamlit_toolbar() -> None:
 
     assert match is not None
     assert float(match.group(1)) >= 4.0
+
+
+def test_topbar_exposes_local_and_remote_access_addresses() -> None:
+    source = APP_SOURCE.read_text(encoding="utf-8")
+
+    assert "本地调试地址" in source
+    assert "远程访问地址" in source
+    assert "CREDIT_PLATFORM_PUBLIC_HOST" in source
+    assert "http://<ECS公网IP>:8503" in source

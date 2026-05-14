@@ -26,19 +26,116 @@
 ```powershell
 python -m pip install -e ".[dev]"
 python -m pytest -q
-python -m streamlit run app.py --server.headless true --server.port 8501
+python -m streamlit run app.py --server.address 0.0.0.0 --server.headless true --server.port 8503
 ```
 
-访问：
+访问地址：
 
 ```text
-http://127.0.0.1:8501
+本地调试地址：http://localhost:8503
+远程访问地址：http://<ECS公网IP>:8503
+```
+
+说明：
+
+- 页面顶部会同时显示本地调试地址和远程访问地址。
+- 未设置 `CREDIT_PLATFORM_PUBLIC_HOST` 时，页面会默认显示 `http://<ECS公网IP>:8503` 占位地址，本地调试仍然直接使用 `http://localhost:8503`。
+- 如需在本地预演 ECS 访问地址，可先设置 `CREDIT_PLATFORM_PUBLIC_HOST`，再启动应用。
+
+可选环境变量示例：
+
+```powershell
+$env:CREDIT_PLATFORM_PUBLIC_HOST = "203.0.113.10"
+$env:CREDIT_PLATFORM_PUBLIC_PORT = "8503"
+python -m streamlit run app.py --server.address 0.0.0.0 --server.headless true --server.port 8503
 ```
 
 快速健康检查：
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8501/_stcore/health
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8503/_stcore/health
+```
+
+## 阿里云 ECS 部署
+
+以下步骤以 Linux ECS + systemd 为例；如果你的 ECS 是 Windows，或未使用 systemd，服务托管步骤需要改成对应平台的方式。
+
+1. 将项目上传到 ECS，并进入项目目录。
+2. 安装 Python 3.12+、`venv` 和基础编译依赖。
+3. 创建虚拟环境并安装依赖：
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+4. 确认模型产物目录存在于 `data/model_artifacts/home-credit-gpu-full`，并且运行态数据库目录 `data/runtime/` 具备写权限。
+5. 设置公网访问环境变量。这里必须把 `<ECS公网IP>` 替换为 ECS 的真实公网 IP，不要保留占位符：
+
+```bash
+export CREDIT_PLATFORM_PUBLIC_HOST="<ECS公网IP>"
+export CREDIT_PLATFORM_PUBLIC_PORT="8503"
+```
+
+6. 在阿里云安全组中放通入方向 TCP `8503`；如果操作系统启用了防火墙，也要同步放通 `8503/tcp`。
+7. 先以前台方式启动服务，确认应用可正常启动：
+
+```bash
+source .venv/bin/activate
+python -m streamlit run app.py --server.address 0.0.0.0 --server.headless true --server.port 8503
+```
+
+8. 做健康检查：
+
+```bash
+curl http://127.0.0.1:8503/_stcore/health
+curl http://<ECS公网IP>:8503/_stcore/health
+```
+
+9. 远程访问地址为：
+
+```text
+http://<ECS公网IP>:8503
+```
+
+### systemd 常驻运行示例
+
+将下面的服务文件保存为 `/etc/systemd/system/credit-risk-platform.service`，并把 `User`、`Group`、`WorkingDirectory`、`ExecStart` 里的路径替换成你在 ECS 上的真实值。同时，`CREDIT_PLATFORM_PUBLIC_HOST` 必须替换为真实公网 IP。
+
+```ini
+[Unit]
+Description=Credit Risk Scoring Platform
+After=network.target
+
+[Service]
+Type=simple
+User=ecs-user
+Group=ecs-user
+WorkingDirectory=/opt/credit-risk-scoring-platform
+Environment=CREDIT_PLATFORM_PUBLIC_HOST=<ECS公网IP>
+Environment=CREDIT_PLATFORM_PUBLIC_PORT=8503
+ExecStart=/opt/credit-risk-scoring-platform/.venv/bin/python -m streamlit run app.py --server.address 0.0.0.0 --server.headless true --server.port 8503
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+加载并启动服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now credit-risk-platform.service
+sudo systemctl status credit-risk-platform.service
+```
+
+查看日志：
+
+```bash
+sudo journalctl -u credit-risk-platform.service -f
 ```
 
 ## 数据与产物

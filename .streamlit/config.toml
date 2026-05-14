@@ -3,8 +3,8 @@ gatherUsageStats = false
 
 [server]
 headless = true
-address = "127.0.0.1"
-port = 8501
+address = "0.0.0.0"
+port = 8503
 
 [theme]
 base = "light"

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import sys
 from dataclasses import asdict, replace
+from html import escape
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit import config as st_config
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
@@ -27,6 +29,7 @@ from credit_platform.reporting_service import (
     build_risk_distribution,
     parse_json_field,
 )
+from credit_platform.runtime_access import RuntimeAccessConfig, build_runtime_access_config
 from credit_platform.scoring_service import ScoringService
 from credit_platform.strategy_service import simulate_strategy
 
@@ -107,6 +110,34 @@ def inject_styles() -> None:
             font-size: 13px;
             font-weight: 700;
             margin-top: 8px;
+        }
+        .topbar-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 20px;
+            margin-top: 12px;
+            color: var(--text);
+            font-size: 13px;
+        }
+        .topbar-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #f8fbff;
+            border: 1px solid #dbe8ff;
+            font-weight: 700;
+        }
+        .topbar-link-label {
+            color: var(--muted);
+            font-weight: 600;
+        }
+        .topbar-note {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 10px;
+            line-height: 1.55;
         }
         div[data-testid="stMetric"] {
             background: #fff;
@@ -243,13 +274,38 @@ def page_header(title: str, caption: str) -> None:
     st.markdown(f"<div class='subtle'>{caption}</div>", unsafe_allow_html=True)
 
 
-def render_app_header() -> None:
+def resolve_runtime_access() -> RuntimeAccessConfig:
+    try:
+        server_port = int(st_config.get_option("server.port"))
+    except (TypeError, ValueError):
+        server_port = None
+    return build_runtime_access_config(server_port=server_port)
+
+
+def render_app_header(access_config: RuntimeAccessConfig) -> None:
+    local_url = escape(access_config.local_url)
+    remote_url = escape(access_config.remote_url)
+    if access_config.public_host_configured:
+        access_note = (
+            "远程访问地址已根据 CREDIT_PLATFORM_PUBLIC_HOST 生成；"
+            "如需对外暴露不同端口，可额外设置 CREDIT_PLATFORM_PUBLIC_PORT。"
+        )
+    else:
+        access_note = (
+            "部署到 ECS 前，请将 CREDIT_PLATFORM_PUBLIC_HOST 设置为真实公网 IP；"
+            "未设置时页面会继续显示 http://<ECS公网IP>:8503 占位地址。"
+        )
     st.markdown(
-        """
+        f"""
         <div class="topbar">
             <div class="topbar-title">信用风控评分平台</div>
             <div class="topbar-caption">Home Credit artifact-backed MVP</div>
             <div class="topbar-meta">业务闭环：申请接入 -> 模型评分 -> 策略决策 -> 人工复核 -> 监控报表</div>
+            <div class="topbar-links">
+                <span class="topbar-link"><span class="topbar-link-label">本地调试地址</span><span>{local_url}</span></span>
+                <span class="topbar-link"><span class="topbar-link-label">远程访问地址</span><span>{remote_url}</span></span>
+            </div>
+            <div class="topbar-note">{escape(access_note)}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -799,6 +855,7 @@ def tutorial_page() -> None:
 def main() -> None:
     inject_styles()
     artifacts, repo, service = load_runtime()
+    access_config = resolve_runtime_access()
 
     pages = [
         st.Page(lambda: overview_page(repo, artifacts), title="风控总览", url_path="overview", default=True),
@@ -810,7 +867,7 @@ def main() -> None:
         st.Page(tutorial_page, title="平台教程", url_path="tutorial"),
     ]
     page = st.navigation(pages, position="top")
-    render_app_header()
+    render_app_header(access_config)
     page.run()
 
 
