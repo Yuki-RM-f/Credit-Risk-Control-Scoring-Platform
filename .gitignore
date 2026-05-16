@@ -8,5 +8,9 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-data/
+data/*
+!data/model_artifacts/
+data/model_artifacts/*
+!data/model_artifacts/home-credit-gpu-full/
+!data/model_artifacts/home-credit-gpu-full/**
 artifacts/
