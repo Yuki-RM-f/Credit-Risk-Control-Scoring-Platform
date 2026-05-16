@@ -1,0 +1,143 @@
+{
+  "roc_auc": 0.7875761089236313,
+  "ks": 0.4344633596162205,
+  "logloss": 0.23640340742606936,
+  "brier_score": 0.06561057721662857,
+  "mode": "full",
+  "tree_device": "gpu",
+  "xgboost_device": "cuda",
+  "lightgbm_device_type": "gpu",
+  "gpu_preflight": {
+    "required": true,
+    "passed": true,
+    "xgboost_device": "cuda:0",
+    "lightgbm_device_type": "gpu",
+    "lightgbm_boosting_types": [
+      "gbdt",
+      "goss"
+    ]
+  },
+  "holdout_roc_auc": 0.7875761089236313,
+  "oof_roc_auc": 0.7843977708606406,
+  "oof_ks": 0.42850397891988173,
+  "oof_logloss": 0.23793806873004897,
+  "oof_brier_score": 0.06615112261493453,
+  "blend_metric": "roc_auc",
+  "blend_weight": 1.0,
+  "blend_weights": {
+    "xgboost": 1.0,
+    "lightgbm": 0.0,
+    "lightgbm_goss": 0.0
+  },
+  "blend_roc_auc": 0.7839032292232372,
+  "blend_logloss": 0.5408101710105676,
+  "final_strategy": "xgboost_only",
+  "feature_count": 438,
+  "training_seconds": 1004.7685169000033,
+  "shap_model": "xgboost",
+  "calibration_method": "isotonic",
+  "calibration": {
+    "selected": "isotonic",
+    "isotonic_logloss": 0.23793806873004897,
+    "platt_logloss": 0.2386107636106816,
+    "small_sample_threshold": 20000,
+    "stability_margin": 0.02
+  },
+  "baseline_logistic": {
+    "roc_auc": 0.7751021058406761,
+    "ks": 0.414310552729341,
+    "logloss": 0.566696330514451,
+    "brier_score": 0.1918307638139798
+  },
+  "xgboost": {
+    "roc_auc": 0.7876064158757916,
+    "ks": 0.43532837685083925,
+    "logloss": 0.5406351584927458,
+    "brier_score": 0.18127202987670898
+  },
+  "lightgbm": {
+    "roc_auc": 0.7917981817396152,
+    "ks": 0.4429837259415078,
+    "logloss": 0.47365578950023757,
+    "brier_score": 0.15449725130366207
+  },
+  "lightgbm_goss": {
+    "roc_auc": 0.7919176283580023,
+    "ks": 0.44468901967812674,
+    "logloss": 0.48222442764177814,
+    "brier_score": 0.15763696519811263
+  },
+  "raw_blend": {
+    "roc_auc": 0.7876064158757916,
+    "ks": 0.43532837685083925,
+    "logloss": 0.5406351584611309,
+    "brier_score": 0.1812720187956938
+  },
+  "oof_xgboost": {
+    "roc_auc": 0.7839032292232372,
+    "ks": 0.42850397891988173,
+    "logloss": 0.5408101710105676,
+    "brier_score": 0.18142255648220093
+  },
+  "oof_lightgbm": {
+    "roc_auc": 0.7271602074132989,
+    "ks": 0.33398616713869933,
+    "logloss": 0.27798282180256645,
+    "brier_score": 0.07369278889988848
+  },
+  "oof_lightgbm_goss": {
+    "roc_auc": 0.7287537399422644,
+    "ks": 0.3349664162215438,
+    "logloss": 0.2779697004850225,
+    "brier_score": 0.07369010734134711
+  },
+  "oof_raw_blend": {
+    "roc_auc": 0.7839032292232372,
+    "ks": 0.42850397891988173,
+    "logloss": 0.5408101710105676,
+    "brier_score": 0.18142255648220093
+  },
+  "model_params": {
+    "xgboost": {
+      "learning_rate": 0.03,
+      "n_estimators": 600,
+      "max_depth": 4,
+      "subsample": 0.8,
+      "colsample_bytree": 0.5,
+      "reg_alpha": null,
+      "reg_lambda": 8,
+      "min_child_weight": 20,
+      "device": "cuda"
+    },
+    "lightgbm": {
+      "boosting_type": "gbdt",
+      "learning_rate": 0.02,
+      "n_estimators": 3000,
+      "num_leaves": 31,
+      "max_depth": 5,
+      "min_child_samples": 80,
+      "subsample": 0.8,
+      "subsample_freq": 1,
+      "colsample_bytree": 0.35,
+      "reg_alpha": 0.1,
+      "reg_lambda": 5.0,
+      "min_child_weight": 0.001,
+      "device_type": "gpu"
+    },
+    "lightgbm_goss": {
+      "boosting_type": "goss",
+      "learning_rate": 0.02,
+      "n_estimators": 3000,
+      "num_leaves": 31,
+      "max_depth": 5,
+      "min_child_samples": 80,
+      "subsample": 1.0,
+      "subsample_freq": 0,
+      "colsample_bytree": 0.35,
+      "reg_alpha": 0.1,
+      "reg_lambda": 5.0,
+      "min_child_weight": 0.001,
+      "device_type": "gpu"
+    }
+  }
+}

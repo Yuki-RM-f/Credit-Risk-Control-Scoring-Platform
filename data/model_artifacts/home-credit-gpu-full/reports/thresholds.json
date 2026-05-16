@@ -1,0 +1,21 @@
+{
+  "single_threshold": {
+    "t_star": 0.14,
+    "total_cost": 19459.0,
+    "pass_rate": 0.8382843113344065,
+    "reject_rate": 0.16171568866559355,
+    "bad_capture_rate": 0.5139979859013092,
+    "false_negative_count": 2413,
+    "false_positive_count": 7394
+  },
+  "dual_threshold": {
+    "t1": 0.14,
+    "t2": 0.42000000000000004,
+    "total_cost": 16124.0,
+    "pass_rate": 0.8382843113344065,
+    "review_rate": 0.14771637155911094,
+    "reject_rate": 0.01399931710648261,
+    "bad_capture_rate": 0.0878147029204431,
+    "review_count": 9085
+  }
+}
